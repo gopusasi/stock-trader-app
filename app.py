@@ -7,7 +7,8 @@ import os
 import requests
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(page_title="Universal Stock Momentum Screener", layout="wide", page_icon="🎯")
+# திரையை முழு அகலத்தில் (Wide Layout) காட்ட அமைத்துள்ளோம்
+st.set_page_config(page_title="Stock Momentum Screener", layout="wide", page_icon="🎯")
 
 # 🔄 ஒவ்வொரு 15 நொடிகளுக்கும் பக்கம் தானாகப் புதுப்பிக்கப்படும்
 count = st_autorefresh(interval=15 * 1000, key="stock_feed_refresh")
@@ -29,41 +30,35 @@ now = datetime.now(ist)
 current_time_str = now.strftime("%I:%M:%S %p")
 time_decimal = now.hour + (now.minute / 60.0)
 
-st.title("🎯 All-Stocks AI Momentum Dashboard")
-st.caption(f"🔄 நேரலை தானியங்கி அப்டேட்: **{current_time_str}** | புதுப்பிப்புகள்: #{count}")
+st.title("🎯 AI Live Stock Dashboard")
+st.caption(f"🔄 தானியங்கி புதுப்பிப்பு: **{current_time_str}** | சுழற்சி: #{count}")
 
 if 9.5 <= time_decimal < 14.5:
     st.success(f"🟢 நேரம்: {current_time_str} | [BEST TRADING ZONE] என்ட்ரி எடுக்க உகந்த நேரம்.")
 elif 9.25 <= time_decimal < 9.5:
-    st.error(f"⚠️ நேரம்: {current_time_str} | [NO TRADE ZONE] மார்க்கெட் நிலையற்ற நேரம். ஆர்டர் எடுக்க வேண்டாம்!")
+    st.error(f"⚠️ நேரம்: {current_time_str} | [NO TRADE ZONE] சந்தை நிலையற்ற நேரம். தவிர்க்கவும்!")
 else:
-    st.warning(f"🕒 நேரம்: {current_time_str} | வர்த்தக நேரம் அல்ல / மார்க்கெட் முடிவடைந்தது.")
+    st.warning(f"🕒 நேரம்: {current_time_str} | மார்க்கெட் முடிவடைந்தது / ஓய்வு நேரம்.")
 
 st.markdown("---")
 
-# 📊 Large, Mid & High-Volume Low Level Stocks (மொத்தம் 90+ பங்குகள்)
+# Large, Mid & Penny / High-Volume பங்குகள் பட்டியல்
 WATCHLIST = [
-    # --- முன்னணி Large Cap பங்குகள் ---
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
     "TATAMOTORS.NS", "SBIN.NS", "BHARTIARTL.NS", "ITC.NS", "LT.NS",
     "KOTAKBANK.NS", "AXISBANK.NS", "ASIANPAINT.NS", "MARUTI.NS", "SUNPHARMA.NS",
     "TITAN.NS", "BAJFINANCE.NS", "WIPRO.NS", "HCLTECH.NS", "NTPC.NS",
     "ONGC.NS", "POWERGRID.NS", "TATASTEEL.NS", "COALINDIA.NS", "M&M.NS",
-    
-    # --- சிறந்த Mid-Cap பங்குகள் ---
     "TRENT.NS", "BEL.NS", "HAL.NS", "VEDL.NS", "POLYCAB.NS",
-    "PERSISTENT.NS", "COFORGE.NS", "DIXON.NS", "ASHOKLEY.NS", "BUMPER.NS",
+    "PERSISTENT.NS", "COFORGE.NS", "DIXON.NS", "ASHOKLEY.NS",
     "FEDERALBNK.NS", "IDFCFIRSTB.NS", "AUROPHARMA.NS", "LUPIN.NS", "CANBK.NS",
     "BANKBARODA.NS", "INDIANB.NS", "UNIONBANK.NS", "VOLTAS.NS", "TATACHEM.NS",
-    "TATACOMM.NS", "EXIDEIND.NS", "AMBUJACEM.NS", "ACC.NS", "TATAPOWER.NS",
-    "JSWENERGY.NS", "NHPC.NS", "SJVN.NS", "BHEL.NS", "NMDC.NS",
-    
-    # --- அதிக மூவ்மென்ட் தரும் Low-Level / Penny / High-Volume பங்குகள் ---
+    "TATAPOWER.NS", "JSWENERGY.NS", "NHPC.NS", "SJVN.NS", "BHEL.NS", "NMDC.NS",
     "SUZLON.NS", "IDEA.NS", "YESBANK.NS", "ZOMATO.NS", "IRFC.NS",
     "RVNL.NS", "IRCON.NS", "RAILTEL.NS", "NBCC.NS", "HUDCO.NS",
     "IOC.NS", "GAIL.NS", "SAIL.NS", "PNB.NS", "UCOBANK.NS",
     "IOB.NS", "CENTRALBK.NS", "MAHABANK.NS", "RPOWER.NS", "JPPOWER.NS",
-    "RENUKA.NS", "GTLINFRA.NS", "HFCL.NS", "IFCI.NS", "SOUTHBANK.NS"
+    "RENUKA.NS", "HFCL.NS", "IFCI.NS", "SOUTHBANK.NS"
 ]
 
 held_stocks = []
@@ -76,7 +71,6 @@ if os.path.exists(CSV_FILE):
     except Exception:
         pass
 
-# அதிவேக Batch Data Download (ஒரே நேரத்தில் அனைத்து பங்குகளின் விலையையும் எடுக்கும்)
 @st.cache_data(ttl=10)
 def scan_all_stocks():
     results = []
@@ -97,12 +91,17 @@ def scan_all_stocks():
                     prev_price = float(df['Close'].iloc[-5])
                     pct = round(((curr_price - prev_price) / prev_price) * 100, 2)
 
+                    status = "NEUTRAL"
+                    if pct > 0.4:
+                        status = "POSITIVE"
+                    elif pct < -0.4:
+                        status = "NEGATIVE"
+
                     results.append({
                         "Ticker": ticker,
                         "Live Price": curr_price,
                         "Change %": pct,
-                        "Is_Positive": pct > 0.4,
-                        "Is_Negative": pct < -0.4
+                        "Status": status
                     })
             except Exception:
                 continue
@@ -110,26 +109,33 @@ def scan_all_stocks():
         pass
     return pd.DataFrame(results)
 
-with st.spinner("Large, Mid & Low level பங்குகள் ஸ்கேன் செய்யப்படுகின்றன..."):
+with st.spinner("அனைத்து பங்குகளையும் ஸ்கேன் செய்கிறது..."):
     df_market = scan_all_stocks()
 
-st.subheader("📋 நேரலை சிக்னல்கள் (Live Signals)")
+pos_df = df_market[df_market["Status"] == "POSITIVE"] if not df_market.empty else pd.DataFrame()
+neg_df = df_market[df_market["Status"] == "NEGATIVE"] if not df_market.empty else pd.DataFrame()
+neu_df = df_market[df_market["Status"] == "NEUTRAL"] if not df_market.empty else pd.DataFrame()
 
-if not df_market.empty:
-    for idx, row in df_market.iterrows():
-        ticker = row["Ticker"]
-        price = row["Live Price"]
-        pct = row["Change %"]
-        is_held = ticker in held_stocks
+# 📱 திரையை இடமிருந்து வலமாக 3 பக்கவாட்டுப் பத்திகளாக (3 Columns) பிரிக்கிறோம்
+col_left, col_mid, col_right = st.columns(3)
 
-        col1, col2, col3 = st.columns([3, 3, 4])
-        col1.markdown(f"**{ticker}** {'💼 *(Holding)*' if is_held else ''}")
-        col2.markdown(f"₹{price} ({'+' if pct > 0 else ''}{pct}%)")
-
-        if row["Is_Positive"]:
+# ---------------------------------------------------------
+# 🟢 இடதுபுறம் (Left): POSITIVE MOMENTUM (BUY)
+# ---------------------------------------------------------
+with col_left:
+    st.subheader("🟢 Positive (BUY)")
+    if not pos_df.empty:
+        for idx, row in pos_df.iterrows():
+            ticker = row["Ticker"]
+            price = row["Live Price"]
+            pct = row["Change %"]
+            is_held = ticker in held_stocks
             target = round(price * 1.02, 2)
             sl = round(price * 0.99, 2)
-            if col3.button(f"🟢 1-Click BUY (Target: ₹{target} | SL: ₹{sl})", key=f"buy_{idx}"):
+
+            st.markdown(f"**{ticker}** {'💼 *(Holding)*' if is_held else ''}")
+            st.markdown(f"🟢 **₹{price}** (+{pct}%)")
+            if st.button(f"🚀 BUY (T: ₹{target} | SL: ₹{sl})", key=f"pos_{idx}", use_container_width=True):
                 new_row = pd.DataFrame([{
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "Ticker": ticker, "Action": "BUY", "Current_Price": price,
@@ -139,10 +145,26 @@ if not df_market.empty:
                 new_row.to_csv(CSV_FILE, mode="a", index=False, header=not os.path.exists(CSV_FILE))
                 send_telegram(f"🟢 *BUY Triggered!*\nStock: `{ticker}`\nPrice: ₹{price}\nTarget: ₹{target}\nSL: ₹{sl}")
                 st.rerun()
+            st.divider()
+    else:
+        st.info("பாசிட்டிவ் பங்குகள் இல்லை.")
 
-        elif row["Is_Negative"]:
+# ---------------------------------------------------------
+# 🔴 நடுவில் (Middle): NEGATIVE MOMENTUM (SELL)
+# ---------------------------------------------------------
+with col_mid:
+    st.subheader("🔴 Negative (SELL)")
+    if not neg_df.empty:
+        for idx, row in neg_df.iterrows():
+            ticker = row["Ticker"]
+            price = row["Live Price"]
+            pct = row["Change %"]
+            is_held = ticker in held_stocks
+
+            st.markdown(f"**{ticker}** {'💼 *(Holding)*' if is_held else ''}")
+            st.markdown(f"🔴 **₹{price}** ({pct}%)")
             if is_held:
-                if col3.button(f"🔴 1-Click SELL (Exit Position)", key=f"sell_{idx}"):
+                if st.button(f"🔴 Exit / SELL", key=f"neg_{idx}", use_container_width=True):
                     new_row = pd.DataFrame([{
                         "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "Ticker": ticker, "Action": "SELL", "Current_Price": price,
@@ -153,12 +175,23 @@ if not df_market.empty:
                     send_telegram(f"🔴 *SELL / EXIT Triggered!*\nStock: `{ticker}`\nExit Price: ₹{price}")
                     st.rerun()
             else:
-                col3.error("🛑 DON'T BUY (Negative Trend)")
-        else:
-            col3.info("⚪ WAIT (No Momentum)")
-        
-        st.divider()
+                st.caption("🛑 டவுன்ட்ரெண்ட் (Avoid Buying)")
+            st.divider()
+    else:
+        st.info("நெகட்டிவ் பங்குகள் இல்லை.")
 
+# ---------------------------------------------------------
+# 🟡 வலதுபுறம் (Right): NO MOVEMENT (NEUTRAL)
+# ---------------------------------------------------------
+with col_right:
+    st.subheader("🟡 Neutral (No Move)")
+    if not neu_df.empty:
+        st.caption(f"மொத்தம்: {len(neu_df)} பங்குகள்")
+        st.dataframe(neu_df[["Ticker", "Live Price", "Change %"]], use_container_width=True, height=450)
+    else:
+        st.info("அனைத்திலும் மொமண்டம் உள்ளது.")
+
+st.markdown("---")
 st.subheader("📊 தற்போது இயங்கும் டிரேடுகள் (Open Positions)")
 if os.path.exists(CSV_FILE):
     try:
@@ -166,4 +199,3 @@ if os.path.exists(CSV_FILE):
         st.dataframe(df_open, use_container_width=True)
     except Exception:
         pass
-        
