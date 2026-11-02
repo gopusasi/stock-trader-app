@@ -5,8 +5,12 @@ from datetime import datetime
 import pytz
 import os
 import requests
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="Universal Stock Momentum Screener", layout="wide", page_icon="🎯")
+
+# 🔄 ஒவ்வொரு 10 நொடிகளுக்கும் பக்கம் தானாகப் புதுப்பிக்கப்படும்
+count = st_autorefresh(interval=10 * 1000, key="stock_feed_refresh")
 
 CSV_FILE = "paper_trades.csv"
 TELEGRAM_BOT_TOKEN = "9137625560:AAFnBFjBmw6B4M1JgtXXzV2OTqqBjkCpUUA"
@@ -22,10 +26,11 @@ def send_telegram(msg):
 # நேரக் கட்டுப்பாடு
 ist = pytz.timezone('Asia/Kolkata')
 now = datetime.now(ist)
-current_time_str = now.strftime("%I:%M %p")
+current_time_str = now.strftime("%I:%M:%S %p")
 time_decimal = now.hour + (now.minute / 60.0)
 
 st.title("🎯 All-Stocks AI Momentum Dashboard")
+st.caption(f"🔄 நேரலை தானியங்கி அப்டேட்: **{current_time_str}** | புதுப்பிப்புகள்: #{count}")
 
 if 9.5 <= time_decimal < 14.5:
     st.success(f"🟢 நேரம்: {current_time_str} | [BEST TRADING ZONE] என்ட்ரி எடுக்க உகந்த நேரம்.")
@@ -44,12 +49,15 @@ WATCHLIST = [
 
 held_stocks = []
 if os.path.exists(CSV_FILE):
-    df_existing = pd.read_csv(CSV_FILE)
-    if "Status" in df_existing.columns and "Action" in df_existing.columns:
-        open_buys = df_existing[(df_existing["Status"] == "OPEN") & (df_existing["Action"] == "BUY")]
-        held_stocks = open_buys["Ticker"].tolist()
+    try:
+        df_existing = pd.read_csv(CSV_FILE)
+        if "Status" in df_existing.columns and "Action" in df_existing.columns:
+            open_buys = df_existing[(df_existing["Status"] == "OPEN") & (df_existing["Action"] == "BUY")]
+            held_stocks = open_buys["Ticker"].tolist()
+    except Exception:
+        pass
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=5)
 def scan_all_stocks():
     results = []
     for ticker in WATCHLIST:
@@ -72,8 +80,7 @@ def scan_all_stocks():
             continue
     return pd.DataFrame(results)
 
-with st.spinner("அனைத்து பங்குகளையும் ஸ்கேன் செய்கிறது..."):
-    df_market = scan_all_stocks()
+df_market = scan_all_stocks()
 
 st.subheader("📋 நேரலை சிக்னல்கள் (Live Signals)")
 
@@ -123,6 +130,8 @@ if not df_market.empty:
 
 st.subheader("📊 தற்போது இயங்கும் டிரேடுகள் (Open Positions)")
 if os.path.exists(CSV_FILE):
-    df_open = pd.read_csv(CSV_FILE)
-    st.dataframe(df_open, use_container_width=True)
-  
+    try:
+        df_open = pd.read_csv(CSV_FILE)
+        st.dataframe(df_open, use_container_width=True)
+    except Exception:
+        pass
