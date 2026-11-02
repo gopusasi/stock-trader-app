@@ -116,7 +116,7 @@ pos_df = df_market[df_market["Status"] == "POSITIVE"] if not df_market.empty els
 neg_df = df_market[df_market["Status"] == "NEGATIVE"] if not df_market.empty else pd.DataFrame()
 neu_df = df_market[df_market["Status"] == "NEUTRAL"] if not df_market.empty else pd.DataFrame()
 
-# 📱 திரையை இடமிருந்து வலமாக 3 பக்கவாட்டுப் பத்திகளாக (3 Columns) பிரிக்கிறோம்
+# 📱 திரையை இடமிருந்து வலமாக 3 பக்கவாட்டுப் பத்திகளாகப் பிரிக்கிறோம்
 col_left, col_mid, col_right = st.columns(3)
 
 # ---------------------------------------------------------
@@ -130,12 +130,16 @@ with col_left:
             price = row["Live Price"]
             pct = row["Change %"]
             is_held = ticker in held_stocks
+            
+            # Target (+2%) மற்றும் Stop Loss (-1%) கணக்கீடு
             target = round(price * 1.02, 2)
             sl = round(price * 0.99, 2)
 
             st.markdown(f"**{ticker}** {'💼 *(Holding)*' if is_held else ''}")
             st.markdown(f"🟢 **₹{price}** (+{pct}%)")
-            if st.button(f"🚀 BUY (T: ₹{target} | SL: ₹{sl})", key=f"pos_{idx}", use_container_width=True):
+            
+            # 🎯 பட்டனில் தெளிவான Target மற்றும் Stop Loss மட்டும்
+            if st.button(f"🎯 Target: ₹{target} | SL: ₹{sl}", key=f"pos_{idx}", use_container_width=True):
                 new_row = pd.DataFrame([{
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "Ticker": ticker, "Action": "BUY", "Current_Price": price,
@@ -143,7 +147,7 @@ with col_left:
                     "Status": "OPEN", "Simulated_PnL": 0.0
                 }])
                 new_row.to_csv(CSV_FILE, mode="a", index=False, header=not os.path.exists(CSV_FILE))
-                send_telegram(f"🟢 *BUY Triggered!*\nStock: `{ticker}`\nPrice: ₹{price}\nTarget: ₹{target}\nSL: ₹{sl}")
+                send_telegram(f"🟢 *BUY Triggered!*\nStock: `{ticker}`\nEntry Price: ₹{price}\nTarget: ₹{target}\nSL: ₹{sl}")
                 st.rerun()
             st.divider()
     else:
@@ -160,19 +164,23 @@ with col_mid:
             price = row["Live Price"]
             pct = row["Change %"]
             is_held = ticker in held_stocks
+            
+            # Sell-க்கான Target (-2%) மற்றும் SL (+1%)
+            sell_target = round(price * 0.98, 2)
+            sell_sl = round(price * 1.01, 2)
 
             st.markdown(f"**{ticker}** {'💼 *(Holding)*' if is_held else ''}")
             st.markdown(f"🔴 **₹{price}** ({pct}%)")
             if is_held:
-                if st.button(f"🔴 Exit / SELL", key=f"neg_{idx}", use_container_width=True):
+                if st.button(f"🔴 Exit @ Target: ₹{sell_target} | SL: ₹{sell_sl}", key=f"neg_{idx}", use_container_width=True):
                     new_row = pd.DataFrame([{
                         "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "Ticker": ticker, "Action": "SELL", "Current_Price": price,
-                        "Entry": price, "Target": round(price * 0.98, 2), "Stop_Loss": round(price * 1.01, 2),
+                        "Entry": price, "Target": sell_target, "Stop_Loss": sell_sl,
                         "Status": "OPEN", "Simulated_PnL": 0.0
                     }])
                     new_row.to_csv(CSV_FILE, mode="a", index=False, header=not os.path.exists(CSV_FILE))
-                    send_telegram(f"🔴 *SELL / EXIT Triggered!*\nStock: `{ticker}`\nExit Price: ₹{price}")
+                    send_telegram(f"🔴 *SELL / EXIT Triggered!*\nStock: `{ticker}`\nExit Price: ₹{price}\nTarget: ₹{sell_target}")
                     st.rerun()
             else:
                 st.caption("🛑 டவுன்ட்ரெண்ட் (Avoid Buying)")
@@ -199,3 +207,4 @@ if os.path.exists(CSV_FILE):
         st.dataframe(df_open, use_container_width=True)
     except Exception:
         pass
+        
