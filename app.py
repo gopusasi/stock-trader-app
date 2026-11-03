@@ -7,7 +7,7 @@ import os
 import requests
 from streamlit_autorefresh import st_autorefresh
 
-# திரையை முழு அகலத்தில் (Wide Layout) காட்ட அமைத்துள்ளோம்
+# திரையை முழு அகலத்தில் (Wide Layout) அமைத்தல்
 st.set_page_config(page_title="Stock Momentum Screener", layout="wide", page_icon="🎯")
 
 # 🔄 ஒவ்வொரு 15 நொடிகளுக்கும் பக்கம் தானாகப் புதுப்பிக்கப்படும்
@@ -61,16 +61,6 @@ WATCHLIST = [
     "RENUKA.NS", "HFCL.NS", "IFCI.NS", "SOUTHBANK.NS"
 ]
 
-held_stocks = []
-if os.path.exists(CSV_FILE):
-    try:
-        df_existing = pd.read_csv(CSV_FILE)
-        if "Status" in df_existing.columns and "Action" in df_existing.columns:
-            open_buys = df_existing[(df_existing["Status"] == "OPEN") & (df_existing["Action"] == "BUY")]
-            held_stocks = open_buys["Ticker"].tolist()
-    except Exception:
-        pass
-
 @st.cache_data(ttl=10)
 def scan_all_stocks():
     results = []
@@ -112,11 +102,70 @@ def scan_all_stocks():
 with st.spinner("அனைத்து பங்குகளையும் ஸ்கேன் செய்கிறது..."):
     df_market = scan_all_stocks()
 
+# ---------------------------------------------------------
+# 🤖 தானியங்கி TARGET & STOP LOSS சரிபார்ப்பு (Auto Exit Monitor)
+# ---------------------------------------------------------
+held_stocks = []
+if os.path.exists(CSV_FILE) and not df_market.empty:
+    try:
+        df_trades = pd.read_csv(CSV_FILE)
+        price_map = dict(zip(df_market["Ticker"], df_market["Live Price"]))
+        csv_updated = False
+
+        if "Status" in df_trades.columns:
+            for idx, trade in df_trades.iterrows():
+                if trade["Status"] == "OPEN" and trade["Action"] == "BUY":
+                    ticker = trade["Ticker"]
+                    held_stocks.append(ticker)
+                    
+                    if ticker in price_map:
+                        curr_p = price_map[ticker]
+                        entry_p = float(trade["Entry"])
+                        target_p = float(trade["Target"])
+                        sl_p = float(trade["Stop_Loss"])
+
+                        # 1. Target வந்ததா என்று பார்த்தல்
+                        if curr_p >= target_p:
+                            pnl_pct = round(((curr_p - entry_p) / entry_p) * 100, 2)
+                            msg = (
+                                f"🎯 *TARGET HIT!*\n\n"
+                                f"Stock: `{ticker}`\n"
+                                f"Entry: ₹{entry_p}\n"
+                                f"Exit (Target): ₹{curr_p}\n"
+                                f"Profit: *+{pnl_pct}%* 🚀"
+                            )
+                            send_telegram(msg)
+                            df_trades.at[idx, "Status"] = "CLOSED_TARGET"
+                            df_trades.at[idx, "Current_Price"] = curr_p
+                            df_trades.at[idx, "Simulated_PnL"] = pnl_pct
+                            csv_updated = True
+
+                        # 2. Stop Loss வந்ததா என்று பார்த்தல்
+                        elif curr_p <= sl_p:
+                            pnl_pct = round(((curr_p - entry_p) / entry_p) * 100, 2)
+                            msg = (
+                                f"🛑 *STOP LOSS HIT!*\n\n"
+                                f"Stock: `{ticker}`\n"
+                                f"Entry: ₹{entry_p}\n"
+                                f"Exit (SL): ₹{curr_p}\n"
+                                f"Loss: *{pnl_pct}%* ⚠️"
+                            )
+                            send_telegram(msg)
+                            df_trades.at[idx, "Status"] = "CLOSED_SL"
+                            df_trades.at[idx, "Current_Price"] = curr_p
+                            df_trades.at[idx, "Simulated_PnL"] = pnl_pct
+                            csv_updated = True
+
+            if csv_updated:
+                df_trades.to_csv(CSV_FILE, index=False)
+    except Exception:
+        pass
+
 pos_df = df_market[df_market["Status"] == "POSITIVE"] if not df_market.empty else pd.DataFrame()
 neg_df = df_market[df_market["Status"] == "NEGATIVE"] if not df_market.empty else pd.DataFrame()
 neu_df = df_market[df_market["Status"] == "NEUTRAL"] if not df_market.empty else pd.DataFrame()
 
-# 📱 திரையை இடமிருந்து வலமாக 3 பக்கவாட்டுப் பத்திகளாகப் பிரிக்கிறோம்
+# 📱 3 பக்கவாட்டுப் பத்திகள்
 col_left, col_mid, col_right = st.columns(3)
 
 # ---------------------------------------------------------
@@ -131,14 +180,12 @@ with col_left:
             pct = row["Change %"]
             is_held = ticker in held_stocks
             
-            # Target (+2%) மற்றும் Stop Loss (-1%) கணக்கீடு
             target = round(price * 1.02, 2)
             sl = round(price * 0.99, 2)
 
             st.markdown(f"**{ticker}** {'💼 *(Holding)*' if is_held else ''}")
             st.markdown(f"🟢 **₹{price}** (+{pct}%)")
             
-            # 🎯 பட்டனில் தெளிவான Target மற்றும் Stop Loss மட்டும்
             if st.button(f"🎯 Target: ₹{target} | SL: ₹{sl}", key=f"pos_{idx}", use_container_width=True):
                 new_row = pd.DataFrame([{
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -165,22 +212,21 @@ with col_mid:
             pct = row["Change %"]
             is_held = ticker in held_stocks
             
-            # Sell-க்கான Target (-2%) மற்றும் SL (+1%)
             sell_target = round(price * 0.98, 2)
             sell_sl = round(price * 1.01, 2)
 
             st.markdown(f"**{ticker}** {'💼 *(Holding)*' if is_held else ''}")
             st.markdown(f"🔴 **₹{price}** ({pct}%)")
             if is_held:
-                if st.button(f"🔴 Exit @ Target: ₹{sell_target} | SL: ₹{sell_sl}", key=f"neg_{idx}", use_container_width=True):
+                if st.button(f"🔴 Manual Exit: ₹{price}", key=f"neg_{idx}", use_container_width=True):
                     new_row = pd.DataFrame([{
                         "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "Ticker": ticker, "Action": "SELL", "Current_Price": price,
                         "Entry": price, "Target": sell_target, "Stop_Loss": sell_sl,
-                        "Status": "OPEN", "Simulated_PnL": 0.0
+                        "Status": "CLOSED_MANUAL", "Simulated_PnL": 0.0
                     }])
                     new_row.to_csv(CSV_FILE, mode="a", index=False, header=not os.path.exists(CSV_FILE))
-                    send_telegram(f"🔴 *SELL / EXIT Triggered!*\nStock: `{ticker}`\nExit Price: ₹{price}\nTarget: ₹{sell_target}")
+                    send_telegram(f"🔴 *MANUAL EXIT!*\nStock: `{ticker}`\nExit Price: ₹{price}")
                     st.rerun()
             else:
                 st.caption("🛑 டவுன்ட்ரெண்ட் (Avoid Buying)")
@@ -200,11 +246,13 @@ with col_right:
         st.info("அனைத்திலும் மொமண்டம் உள்ளது.")
 
 st.markdown("---")
-st.subheader("📊 தற்போது இயங்கும் டிரேடுகள் (Open Positions)")
+
+# டிரேடிங் வரலாறு அட்டவணை
+st.subheader("📊 பொசிஷன் நிலவரம் (Trade Positions & History)")
 if os.path.exists(CSV_FILE):
     try:
         df_open = pd.read_csv(CSV_FILE)
         st.dataframe(df_open, use_container_width=True)
     except Exception:
         pass
-        
+            
